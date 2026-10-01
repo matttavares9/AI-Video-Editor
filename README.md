@@ -5,7 +5,7 @@
 Matthew Tavares's original `Clip.cpp` algorithm is the editing core. It checks
 Laplacian variance at half-second intervals, skips blurry footage and clear
 sections that are too brief, then keeps the first sustained clear shot until
-blur returns. The default threshold is 50 and the minimum clear-shot duration
+blur returns. The default threshold is 40 and the minimum clear-shot duration
 is four seconds. It does not rank isolated sharp frames or split the main shot
 into arbitrary highlights.
 
@@ -138,9 +138,11 @@ export API_BASE_URL=http://127.0.0.1:8000
 python -m mcp_server.server
 ```
 
-Available tools: `upload_video`, `analyze_video`, `get_job_status`, and
-`render_video`. MCP is a thin adapter over the REST API, so there is no second
-editing implementation to keep in sync.
+Available tools: `upload_video`, `analyze_video`, `adjust_edit`,
+`get_job_status`, and `render_video`. Tell Codex “allow a bit more blur” with
+“make it longer,” and it can call `adjust_edit` with `blur_tolerance="more"`
+and `clip_length="longer"`. MCP is a thin adapter over the REST API, so there
+is no second editing implementation to keep in sync.
 
 ## Django, Flask, and Docker
 

@@ -43,3 +43,13 @@ def test_upload_analyze_status_and_export():
 def test_rejects_non_video_upload():
     response = client.post("/jobs", files={"file": ("notes.txt", b"no", "text/plain")})
     assert response.status_code == 415
+
+
+def test_analysis_passes_blur_threshold_to_engine():
+    upload = client.post("/jobs", files={"file": ("sample.mp4", b"not-a-real-video", "video/mp4")})
+    job_id = upload.json()["id"]
+    result = {"status": "ok", "analysis": {"duration_seconds": 12}, "cuts": []}
+    with patch("api.app.main.run_engine", return_value=result) as run_engine:
+        response = client.post(f"/jobs/{job_id}/analyze", json={"blur_threshold": 30})
+    assert response.status_code == 200
+    assert run_engine.call_args.args[1]["blur_threshold"] == 30

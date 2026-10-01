@@ -36,14 +36,17 @@ json analyze(const json& job) {
     const auto input_path = job.at("input_path").get<std::string>();
     const double min_clip = job.value("min_clip_seconds", 4.0);
     const double max_total = job.value("max_total_duration_seconds", 8.0);
-    if (!std::isfinite(min_clip) || !std::isfinite(max_total) || min_clip <= 0 || max_total < min_clip)
-        throw std::runtime_error("Require 0 < min_clip_seconds <= max_total_duration_seconds");
+    const double blur_threshold = job.value("blur_threshold", Clip::DEFAULT_BLUR_THRESHOLD);
+    if (!std::isfinite(min_clip) || !std::isfinite(max_total) || !std::isfinite(blur_threshold) ||
+        min_clip <= 0 || max_total < min_clip || blur_threshold <= 0)
+        throw std::runtime_error("Require positive blur_threshold and 0 < min_clip_seconds <= max_total_duration_seconds");
 
     // Matthew's original Clip class owns selection. The JSON/API/agent layers
     // expose its result; they must not replace it with ranked highlight windows.
     int clip_id = 0;
     Clip clip(input_path, clip_id, "");
     clip.setFaceCascade(job.value("face_cascade_path", std::string()));
+    clip.setBlurThreshold(blur_threshold);
     clip.Create(max_total, min_clip);
 
     json samples = json::array();
@@ -68,7 +71,7 @@ json analyze(const json& job) {
         {"analysis", {
             {"algorithm", "original_contiguous_clear_shot"},
             {"duration_seconds", clip.getLength()}, {"fps", clip.getFPS()},
-            {"sample_count", samples.size()}, {"sharpness_threshold", 50.0},
+            {"sample_count", samples.size()}, {"sharpness_threshold", blur_threshold},
             {"sample_interval_seconds", std::max(1, static_cast<int>(clip.getFPS()/2)) / clip.getFPS()},
             {"samples", samples},
             {"selection_status", cuts.empty() ? "no_qualifying_clear_shot" : "selected"}

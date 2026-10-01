@@ -13,6 +13,7 @@
 
 class Clip {
 public:
+    static constexpr double DEFAULT_BLUR_THRESHOLD = 40.0;
     struct BlurSample { int frame; double variance; bool blurry; };
     // Constructor
     Clip(std::string clip_name, int& clip_num, std::string path, double max_length = 8, double min_length = 4);
@@ -37,6 +38,8 @@ public:
     double getEnd() const { return end_timestamp; }
     const std::vector<BlurSample>& getBlurSamples() const { return blur_samples; }
     void setFaceCascade(const std::string& path) { face_cascade_path = path; }
+    void setBlurThreshold(double threshold) { blur_threshold = threshold; }
+    double getBlurThreshold() const { return blur_threshold; }
 
     int id;
     Clip* next = nullptr;
@@ -54,6 +57,7 @@ private:
     cv::VideoWriter slice;
     std::vector<BlurSample> blur_samples;
     std::string face_cascade_path;
+    double blur_threshold = DEFAULT_BLUR_THRESHOLD;
 };
 
 #endif // HEADER_FILE_NAME_H

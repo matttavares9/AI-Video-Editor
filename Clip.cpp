@@ -42,7 +42,7 @@ double blurVariance(const Mat& image) {
 	return variance;
 }
 
-bool isBlurry(Mat image, double threshold = 50) {
+bool isBlurry(Mat image, double threshold = Clip::DEFAULT_BLUR_THRESHOLD) {
 	return blurVariance(image) < threshold;
 }
 
@@ -78,8 +78,8 @@ bool Clip::FindNotBlurry(double length) {
 				min_reached = true;
 			}
 			const double variance = blurVariance(frame);
-			blur_samples.push_back({frame_num - 1, variance, variance < 50});
-			if (variance < 50) //Original fixed Laplacian-variance blur threshold.
+			blur_samples.push_back({frame_num - 1, variance, variance < blur_threshold});
+			if (variance < blur_threshold) //Configurable Laplacian-variance blur threshold.
 			{
 				//If number of frames between start and end is less than the minimum number of frames (minimum seconds long).
 				if (min_reached != true)//If a proper video length has been established (ATLEAST min seconds).

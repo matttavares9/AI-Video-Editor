@@ -30,6 +30,8 @@ int main(int argc, char** argv) {
         // Initial clear footage is too brief; the first sustained main shot
         // wins, even when more sharp footage follows the closing blur.
         write_fixture(path, {{30,true},{30,false},{150,true},{30,false},{150,true}});
+        Clip default_settings(path.string(), id, "");
+        require(default_settings.getBlurThreshold() == 40, "Default blur threshold must tolerate slightly more blur");
         Clip first(path.string(), id, "");
         first.Create();
         require(first.getStart() >= 2 && first.getStart() <= 2.1, "Kept short opening or skipped main-shot start");

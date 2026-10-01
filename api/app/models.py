@@ -21,6 +21,7 @@ class JobResponse(BaseModel):
 class AnalyzeRequest(BaseModel):
     min_clip_seconds: float = Field(default=4, gt=0)
     max_total_duration_seconds: float = Field(default=8, gt=0)
+    blur_threshold: float = Field(default=40, gt=0, le=1000)
 
 
 class ExportRequest(BaseModel):

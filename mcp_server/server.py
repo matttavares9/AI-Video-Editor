@@ -1,6 +1,7 @@
 """MCP adapter for the same REST tools exposed by the FastAPI service."""
 import os
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -19,14 +20,41 @@ def get_job_status(job_id: str) -> dict:
 
 
 @mcp.tool()
-def analyze_video(job_id: str, min_clip_seconds: float = 4, max_total_duration_seconds: float = 8) -> dict:
-    """Find the original algorithm's continuous clear main shot, then validate it."""
+def analyze_video(
+    job_id: str,
+    min_clip_seconds: float = 4,
+    max_total_duration_seconds: float = 8,
+    blur_threshold: float = 40,
+) -> dict:
+    """Analyze a job. Lower blur_threshold allows more blur; increase max_total_duration_seconds for a longer edit."""
     response = httpx.post(f"{API_BASE_URL}/jobs/{job_id}/analyze", json={
         "min_clip_seconds": min_clip_seconds,
         "max_total_duration_seconds": max_total_duration_seconds,
+        "blur_threshold": blur_threshold,
     }, timeout=190)
     response.raise_for_status()
     return response.json()
+
+
+@mcp.tool()
+def adjust_edit(
+    job_id: str,
+    blur_tolerance: Literal["more", "default", "less"] = "default",
+    clip_length: Literal["shorter", "default", "longer"] = "default",
+) -> dict:
+    """Re-cut a job from a plain-language preference.
+
+    Use blur_tolerance="more" for requests such as "allow a bit more blur";
+    use "less" for a stricter edit. Use clip_length="longer" or "shorter"
+    when the user asks to change the automatic edit duration.
+    """
+    thresholds = {"more": 30, "default": 40, "less": 50}
+    lengths = {"shorter": 6, "default": 8, "longer": 10}
+    return analyze_video(
+        job_id,
+        max_total_duration_seconds=lengths[clip_length],
+        blur_threshold=thresholds[blur_tolerance],
+    )
 
 
 @mcp.tool()
