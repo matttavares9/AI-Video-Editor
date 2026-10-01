@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .db import EditDecision, Job, SessionLocal, initialize_database
 from .engine import DATA_DIR, EngineError, run_engine
-from .models import AnalyzeRequest, Cut, ExportRequest, JobResponse
+from .models import AnalyzeRequest, CompilationResponse, CompileRequest, Cut, ExportRequest, JobResponse
 
 app = FastAPI(title="AI Video Editor API", version="0.1.0")
 
@@ -65,21 +65,57 @@ async def upload_video(file: UploadFile = File(...), db: Session = Depends(get_d
 @app.post("/jobs/{job_id}/analyze", response_model=JobResponse)
 def analyze_job(job_id: str, request: AnalyzeRequest, db: Session = Depends(get_db)):
     job = fetch_job(job_id, db)
-    job.status, job.error = "analyzing", None; db.commit()
     try:
-        analysis = run_engine("analyze", {"input_path": job.source_path, **request.model_dump()})
-        # The C++ core is the sole selector.  The API only validates its result
-        # before saving it; web frameworks and agents never invent new cuts.
-        plan = validate_edit_plan(analysis, request.min_clip_seconds, request.max_total_duration_seconds)
-        job.analysis, job.status = analysis, "analyzed"
-        job.decisions.clear()
-        for cut in plan["cuts"]:
-            job.decisions.append(EditDecision(job_id=job.id, **cut))
+        analyze_and_save(job, request)
         db.commit(); db.refresh(job)
         return serialize(job)
     except (EngineError, OSError, ValueError) as error:
         job.status, job.error = "failed", str(error); db.commit()
         raise HTTPException(422, str(error)) from error
+
+
+@app.post("/compilations", response_model=CompilationResponse)
+def compile_jobs(request: CompileRequest, db: Session = Depends(get_db)):
+    jobs = [fetch_job(job_id, db) for job_id in request.job_ids]
+    analysis_request = AnalyzeRequest(
+        min_clip_seconds=request.min_clip_seconds,
+        max_total_duration_seconds=request.max_total_duration_seconds,
+        blur_threshold=request.blur_threshold,
+    )
+    sources, rendered_ids, skipped_ids = [], [], []
+    try:
+        for job in jobs:
+            analyze_and_save(job, analysis_request)
+            cuts = [Cut(start_seconds=x.start_seconds, end_seconds=x.end_seconds, score=x.score, reason=x.reason) for x in job.decisions]
+            if cuts:
+                sources.append({"input_path": job.source_path, "cuts": [cut.model_dump() for cut in cuts]})
+                rendered_ids.append(job.id)
+            else:
+                skipped_ids.append(job.id)
+        if not sources:
+            raise ValueError("No uploaded clips contained a qualifying clear section")
+        output = DATA_DIR / "exports" / f"compilation-{uuid.uuid4()}-{request.output_name}"
+        result = run_engine("render", {"sources": sources, "output_path": str(output)})
+        db.commit()
+        return CompilationResponse(
+            output_path=result["output_path"], rendered_job_ids=rendered_ids,
+            skipped_job_ids=skipped_ids, frames_written=result["frames_written"],
+        )
+    except (EngineError, OSError, ValueError) as error:
+        db.rollback()
+        raise HTTPException(422, str(error)) from error
+
+
+def analyze_and_save(job: Job, request: AnalyzeRequest) -> None:
+    job.status, job.error = "analyzing", None
+    analysis = run_engine("analyze", {"input_path": job.source_path, **request.model_dump()})
+    # The C++ core is the sole selector. The API only validates its result
+    # before saving it; web frameworks and agents never invent new cuts.
+    plan = validate_edit_plan(analysis, request.min_clip_seconds, request.max_total_duration_seconds)
+    job.analysis, job.status = analysis, "analyzed"
+    job.decisions.clear()
+    for cut in plan["cuts"]:
+        job.decisions.append(EditDecision(job_id=job.id, **cut))
 
 
 @app.get("/jobs/{job_id}", response_model=JobResponse)

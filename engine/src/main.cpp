@@ -81,35 +81,53 @@ json analyze(const json& job) {
 }
 
 json render(const json& job) {
-    const auto input_path = job.at("input_path").get<std::string>();
     const auto output_path = job.at("output_path").get<std::string>();
-    const auto cuts = job.at("cuts");
-    if (cuts.empty()) throw std::runtime_error("Render job requires at least one cut");
-
-    cv::VideoCapture input(input_path);
-    if (!input.isOpened()) throw std::runtime_error("Unable to open input video: " + input_path);
-    const double fps = input.get(cv::CAP_PROP_FPS);
-    const int width = static_cast<int>(input.get(cv::CAP_PROP_FRAME_WIDTH));
-    const int height = static_cast<int>(input.get(cv::CAP_PROP_FRAME_HEIGHT));
-    if (fps <= 0 || width <= 0 || height <= 0) throw std::runtime_error("Invalid video dimensions or frame rate");
+    const json sources = job.contains("sources")
+        ? job.at("sources")
+        : json::array({{{"input_path", job.at("input_path")}, {"cuts", job.at("cuts")}}});
+    if (sources.empty()) throw std::runtime_error("Render job requires at least one source");
 
     fs::path output(output_path);
     if (!output.parent_path().empty()) fs::create_directories(output.parent_path());
-    cv::VideoWriter writer(output.string(), cv::VideoWriter::fourcc('m', 'p', '4', 'v'), fps, {width, height});
-    if (!writer.isOpened()) throw std::runtime_error("Unable to create export: " + output.string());
 
     int written = 0;
-    cv::Mat frame;
-    for (const auto& cut : cuts) {
-        const int begin = std::max(0, static_cast<int>(std::floor(cut.at("start_seconds").get<double>() * fps)));
-        const int end = std::max(begin, static_cast<int>(std::ceil(cut.at("end_seconds").get<double>() * fps)));
-        input.set(cv::CAP_PROP_POS_FRAMES, begin);
-        for (int index = begin; index < end && input.read(frame); ++index) {
-            writer.write(frame);
-            ++written;
+    double output_fps = 0;
+    cv::Size output_size;
+    cv::VideoWriter writer;
+    for (const auto& source : sources) {
+        const auto input_path = source.at("input_path").get<std::string>();
+        const auto cuts = source.at("cuts");
+        if (cuts.empty()) continue;
+
+        cv::VideoCapture input(input_path);
+        if (!input.isOpened()) throw std::runtime_error("Unable to open input video: " + input_path);
+        const double fps = input.get(cv::CAP_PROP_FPS);
+        const cv::Size size(
+            static_cast<int>(input.get(cv::CAP_PROP_FRAME_WIDTH)),
+            static_cast<int>(input.get(cv::CAP_PROP_FRAME_HEIGHT)));
+        if (fps <= 0 || size.width <= 0 || size.height <= 0)
+            throw std::runtime_error("Invalid video dimensions or frame rate");
+        if (!writer.isOpened()) {
+            output_fps = fps;
+            output_size = size;
+            writer.open(output.string(), cv::VideoWriter::fourcc('m', 'p', '4', 'v'), output_fps, output_size);
+            if (!writer.isOpened()) throw std::runtime_error("Unable to create export: " + output.string());
+        }
+
+        cv::Mat frame;
+        for (const auto& cut : cuts) {
+            const int begin = std::max(0, static_cast<int>(std::floor(cut.at("start_seconds").get<double>() * fps)));
+            const int end = std::max(begin, static_cast<int>(std::ceil(cut.at("end_seconds").get<double>() * fps)));
+            input.set(cv::CAP_PROP_POS_FRAMES, begin);
+            for (int index = begin; index < end && input.read(frame); ++index) {
+                if (size != output_size) cv::resize(frame, frame, output_size);
+                writer.write(frame);
+                ++written;
+            }
         }
     }
-    return {{"status", "ok"}, {"output_path", output.string()}, {"frames_written", written}, {"fps", fps}};
+    if (!writer.isOpened() || written == 0) throw std::runtime_error("Render job has no frames to write");
+    return {{"status", "ok"}, {"output_path", output.string()}, {"frames_written", written}, {"fps", output_fps}};
 }
 
 void usage() {

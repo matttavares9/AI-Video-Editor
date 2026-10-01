@@ -24,7 +24,7 @@ def analyze_video(
     job_id: str,
     min_clip_seconds: float = 4,
     max_total_duration_seconds: float = 8,
-    blur_threshold: float = 40,
+    blur_threshold: float = 5,
 ) -> dict:
     """Analyze a job. Lower blur_threshold allows more blur; increase max_total_duration_seconds for a longer edit."""
     response = httpx.post(f"{API_BASE_URL}/jobs/{job_id}/analyze", json={
@@ -48,13 +48,63 @@ def adjust_edit(
     use "less" for a stricter edit. Use clip_length="longer" or "shorter"
     when the user asks to change the automatic edit duration.
     """
-    thresholds = {"more": 30, "default": 40, "less": 50}
+    thresholds = {"more": 2, "default": 5, "less": 15}
     lengths = {"shorter": 6, "default": 8, "longer": 10}
     return analyze_video(
         job_id,
         max_total_duration_seconds=lengths[clip_length],
         blur_threshold=thresholds[blur_tolerance],
     )
+
+
+@mcp.tool()
+def compile_videos(
+    job_ids: list[str],
+    min_clip_seconds: float = 1,
+    max_total_duration_seconds: float = 8,
+    blur_threshold: float = 5,
+    output_name: str = "edited-video.mp4",
+) -> dict:
+    """Automatically analyze, trim, and concatenate already-uploaded clips in job_ids order.
+
+    Use this after separate uploads. Every clip is reanalyzed before rendering,
+    so the output contains the C++-selected trim of each qualifying clip.
+    """
+    response = httpx.post(f"{API_BASE_URL}/compilations", json={
+        "job_ids": job_ids,
+        "min_clip_seconds": min_clip_seconds,
+        "max_total_duration_seconds": max_total_duration_seconds,
+        "blur_threshold": blur_threshold,
+        "output_name": output_name,
+    }, timeout=300)
+    response.raise_for_status()
+    return response.json()
+
+
+@mcp.tool()
+def edit_videos(
+    local_paths: list[str],
+    min_clip_seconds: float = 1,
+    max_total_duration_seconds: float = 8,
+    blur_threshold: float = 5,
+    output_name: str = "edited-video.mp4",
+) -> dict:
+    """Upload one or more local clips, automatically trim each, and join them into one MP4.
+
+    Use this for a request such as "edit these clips for me". Lower
+    blur_threshold allows more blur; the default 5 is intentionally tolerant.
+    """
+    if not local_paths:
+        raise ValueError("Provide at least one local video path")
+    uploads = [upload_video(path) for path in local_paths]
+    compiled = compile_videos(
+        [upload["id"] for upload in uploads],
+        min_clip_seconds=min_clip_seconds,
+        max_total_duration_seconds=max_total_duration_seconds,
+        blur_threshold=blur_threshold,
+        output_name=output_name,
+    )
+    return {"uploads": uploads, "compilation": compiled}
 
 
 @mcp.tool()

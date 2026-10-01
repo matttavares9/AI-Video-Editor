@@ -11,7 +11,7 @@ Those files are restored at the repository root and compiled into both
 
 1. Decode the video and check every `fps / 2` frames.
 2. Classify a sampled frame as blurry when grayscale Laplacian variance is
-   below the configured threshold (40 by default; 50 was the original value).
+   below the configured threshold (5 by default; 50 was the original value).
 3. While a clear run is too short, move its starting boundary after each
    blurry sample. Short clear openings are discarded.
 4. Once the run exceeds the minimum duration, keep its starting boundary.

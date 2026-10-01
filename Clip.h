@@ -13,7 +13,7 @@
 
 class Clip {
 public:
-    static constexpr double DEFAULT_BLUR_THRESHOLD = 40.0;
+    static constexpr double DEFAULT_BLUR_THRESHOLD = 5.0;
     struct BlurSample { int frame; double variance; bool blurry; };
     // Constructor
     Clip(std::string clip_name, int& clip_num, std::string path, double max_length = 8, double min_length = 4);

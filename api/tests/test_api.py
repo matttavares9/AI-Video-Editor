@@ -53,3 +53,18 @@ def test_analysis_passes_blur_threshold_to_engine():
         response = client.post(f"/jobs/{job_id}/analyze", json={"blur_threshold": 30})
     assert response.status_code == 200
     assert run_engine.call_args.args[1]["blur_threshold"] == 30
+
+
+def test_compilation_analyzes_and_joins_every_uploaded_clip():
+    first = client.post("/jobs", files={"file": ("first.mp4", b"first", "video/mp4")}).json()["id"]
+    second = client.post("/jobs", files={"file": ("second.mp4", b"second", "video/mp4")}).json()["id"]
+    analysis = {
+        "status": "ok", "analysis": {"duration_seconds": 12},
+        "cuts": [{"start_seconds": 1, "end_seconds": 6, "score": 0, "reason": "clear"}],
+    }
+    render = {"status": "ok", "output_path": "/tmp/combined.mp4", "frames_written": 300}
+    with patch("api.app.main.run_engine", side_effect=[analysis, analysis, render]) as run_engine:
+        response = client.post("/compilations", json={"job_ids": [first, second]})
+    assert response.status_code == 200
+    assert response.json()["rendered_job_ids"] == [first, second]
+    assert len(run_engine.call_args_list[2].args[1]["sources"]) == 2
