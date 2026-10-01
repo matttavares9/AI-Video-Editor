@@ -11,29 +11,20 @@
 #include <iostream>
 #include <filesystem>
 #include <vector>
-#include <sys\stat.h>
+#include <limits>
+#include <cstdlib>
 
 #include "Clip.h"
 
 //Namespaces
-using namespace cv; 
+using namespace cv;
 using namespace std;
 
 //Fixes the input path by ensuring it includes an extra backslash.
 //In C++, a single backslash "\" is as an escape character, which can lead to path-related issues. This function adds an extra backslash in the path to ensure proper formatting.
 string fixDirectory(const string& path)
 {
-	string modified_path = "";
-	for (char c : path) {
-		if (c == '\\') {
-			modified_path += "\\";
-		}
-		else {
-			modified_path += c;
-		}
-	}
-	modified_path += "\\";
-	return modified_path;
+	return (std::filesystem::path(path) / "").string();
 }
 
 //Checks if the given input string represents a valid integer number.
@@ -191,21 +182,21 @@ void userRender(Clip* head, cv::VideoWriter& output)
 }
 
 int main()
-{	
+{
 	//Handles the file names
 	string filename;
 	string name_of_file;
 
 	//Check for the loop to ensure the user input is valid
 	bool valid_selection = false;
-	
+
 	while (valid_selection == false)
 	{
 		string file_choice; //User's choice to either create or use existing .txt file.
 		string filename; //Name of the file.
-		
-		/* 
-		* Gives user the option to create a text file containing data for the video editor. 
+
+		/*
+		* Gives user the option to create a text file containing data for the video editor.
 		* If user creates <C> the text file, they can add information for a directory and subsequent clip names.
 		* If user selects an existing <E> text file, they can use an previously created text file stored with video editing data.
 		* In the text file: First line is the path; all subsequent lines are video file names.
@@ -259,13 +250,13 @@ int main()
 			cout << "Invalid selection." << endl;
 		}
 	}
-	cout << endl;	
-	
+	cout << endl;
+
 	//Creates a file to redirect the console output. OpenCV displays unneccessary information to the console. This is removed for readability.
-	ofstream file("output.txt"); 
+	ofstream file("output.txt");
 	streambuf* coutBuffer = cout.rdbuf();
 	cout.rdbuf(file.rdbuf());
-	
+
 	//Pointers creates to traverse through linked list of Clip objects. Each Clip object stores data about each video file/clip.
 	int clip_num = 0;
 	Clip* clip = nullptr;
@@ -275,13 +266,14 @@ int main()
 	vector<string> names = parse(name_of_file);
 	string path = names[0];
 
-	//Loops through the number of video names added into the text file. 
+	//Loops through the number of video names added into the text file.
 	if (names.size() > 0)
 	{
 		for (int i = 1; i < names.size(); i++) //Starts at 1 to ignore the path name.
 		{
 			string video_file = names[i];
 			Clip* curr = new Clip(video_file, clip_num, path); //Creates Clip object and adds it to the heap for dynamic memory allocation. Linked list is then built.
+			if (const char* cascade = std::getenv("FACE_CASCADE_PATH")) curr->setFaceCascade(cascade);
 
 			if (clip == nullptr)
 			{
@@ -318,7 +310,7 @@ int main()
 
 		cout << "Finished." << endl;
 	}
-	
+
 	//USER'S CHOICE TO DISPLAY, EDIT OR RENDER
 
 	itr = head; //Set back to first position/head of linked list.
@@ -343,7 +335,7 @@ int main()
 
 	//Uses the OpenCV VideoWriter to write a video file from image sequences in .avi format..
 	VideoWriter Output("Test.avi", VideoWriter::fourcc('M', 'J', 'P', 'G'), clip->getFPS(), Size(clip->getWidth(), clip->getHeight()));
-	userRender(itr, Output); 
+	userRender(itr, Output);
 
 	//Deallocates dynamic memory to prevent memory leaks.
 	while (itr != nullptr) {

@@ -7,8 +7,14 @@
 #include <math.h>
 #include <cmath>
 #include <opencv2/objdetect.hpp>
+#if CV_VERSION_MAJOR >= 5
+#include <opencv2/xobjdetect.hpp>
+#endif
 #include <random>
 #include <string>
+#include <filesystem>
+#include <stdexcept>
+#include <algorithm>
 
 using namespace cv;
 using namespace std;
@@ -17,7 +23,7 @@ using namespace std;
 //"image" is the input image to be checked for blurriness.
 //"threshold" is the threshold value to classify an image as blurry or not.
 // Returns true if the image is blurry, false otherwise.
-bool isBlurry(Mat image, double threshold = 50) {
+double blurVariance(const Mat& image) {
 	Mat gray_image;
 	cvtColor(image, gray_image, COLOR_BGR2GRAY);
 
@@ -33,7 +39,11 @@ bool isBlurry(Mat image, double threshold = 50) {
 
 	double variance = stddev.val[0] * stddev.val[0]; //Variance measures the spread of the pixel intensities in the image. Squaring std gives this value.
 	//Variance is important to detect blurriness. High frequency means theres a large presence of edges, textures, and finer details. Blurry images have LESS variance, looking smooth and supressed.
-	return variance < threshold; //Returns true if blurry, false if not blurry. 
+	return variance;
+}
+
+bool isBlurry(Mat image, double threshold = 50) {
+	return blurVariance(image) < threshold;
 }
 
 //Finds a non-blurry section within the given clip.
@@ -41,9 +51,9 @@ bool isBlurry(Mat image, double threshold = 50) {
 //The function returns true if a non-blurry section of at least the minimum length is found.
 bool Clip::FindNotBlurry(double length) {
 	//Ensures the non-blurry section is longer than the minimum length. The non-blurry section must be ATLEAST min_length seconds.
-	double min_length = 4;
-	if (min_length > length)
-		min_length = length;
+	double min_length = std::min(length, getLength());
+	start_timestamp = end_timestamp = 0;
+	blur_samples.clear();
 
 	//Length of frames to the minimum length.
 	int len_to_frames = min_length * getFPS();
@@ -55,7 +65,7 @@ bool Clip::FindNotBlurry(double length) {
 	int end_num = 0;
 
 	bool min_reached = false;
-	int frame_skip = getFPS()/2; //Skips some frames to speed up process.
+	int frame_skip = std::max(1, static_cast<int>(getFPS()/2)); //Original half-second sampling.
 
 	while (video.read(frame)) {
 		frame_num++;
@@ -67,7 +77,9 @@ bool Clip::FindNotBlurry(double length) {
 			{
 				min_reached = true;
 			}
-			if (isBlurry(frame)) //If it's blurry.
+			const double variance = blurVariance(frame);
+			blur_samples.push_back({frame_num - 1, variance, variance < 50});
+			if (variance < 50) //Original fixed Laplacian-variance blur threshold.
 			{
 				//If number of frames between start and end is less than the minimum number of frames (minimum seconds long).
 				if (min_reached != true)//If a proper video length has been established (ATLEAST min seconds).
@@ -89,6 +101,7 @@ bool Clip::FindNotBlurry(double length) {
 	}
 	if (min_reached == true)
 	{
+		start_timestamp = start_num / getFPS();
 		end_timestamp = end_num / getFPS();
 		return true;
 	}
@@ -99,6 +112,8 @@ bool Clip::FindNotBlurry(double length) {
 //"start" is the frame index to start processing from. It will be updated in this function and is passed by reference.
 void Clip::FacialRecognition(int& start)
 {
+	// Optional for headless use; the caller supplies the cascade location.
+	if (face_cascade_path.empty()) return;
 	VideoCapture video(video_path);
 
 	//The algorithm that is pretrained by Opencv to detect faces.
@@ -106,7 +121,8 @@ void Clip::FacialRecognition(int& start)
 	//Uses features to describe characteristics of onjects. Haar-like features take rectangular regions on the integral image to capture light and dark regions.
 	//These results weight in positive and negative samples.
 	CascadeClassifier facedetect;
-	facedetect.load("C:\\opencv\\sources\\data\\haarcascades\\haarcascade_frontalface_default.xml");
+	if (!facedetect.load(face_cascade_path))
+		throw std::runtime_error("Unable to load face cascade: " + face_cascade_path);
 
 
 	Mat img;
@@ -116,6 +132,7 @@ void Clip::FacialRecognition(int& start)
 
 	while (video.read(img)) {
 		frame++;
+		if (frame > end_timestamp * getFPS()) break;
 		if (frame > start)
 		{
 			//Skip frames if not divisible by frameSkip.
@@ -159,13 +176,16 @@ Clip::Clip(string clip_name, int& clip_num, string path, double max_length, doub
 {
 	clip_num++;
 	id = clip_num;
-	video_path = path + clip_name;
+	video_path = (std::filesystem::path(path) / clip_name).string();
 
 
 	VideoCapture input(video_path);
+	if (!input.isOpened()) throw std::runtime_error("Unable to open video: " + video_path);
 	width = input.get(CAP_PROP_FRAME_WIDTH);
 	height = input.get(CAP_PROP_FRAME_HEIGHT);
 	fps = input.get(CAP_PROP_FPS);
+	if (fps <= 0) throw std::runtime_error("Video has invalid frame rate");
+	video_length = input.get(CAP_PROP_FRAME_COUNT) / fps;
 }
 
 //Handles and analyzes the video clip to determine suitable start and end timestamps, based on the calculations of member functions.
@@ -175,17 +195,16 @@ void Clip::Create(double max_length, double min_length)
 {
 	double cut_length;
 	VideoCapture input(video_path);
-	int framespersecond = round(fps);
 	int total_frames = static_cast<int>(input.get(CAP_PROP_FRAME_COUNT));
-	video_length = total_frames / framespersecond;
+	video_length = total_frames / fps;
 
 	if (min_length > video_length)
 		min_length = video_length;
 	if (max_length > video_length)
 		max_length = video_length;
-			
+
 	int start_f = start_timestamp * getFPS(); //Start frame.
-	if (FindNotBlurry()) //If a proper segment is found.
+	if (FindNotBlurry(min_length)) //Original contiguous-clear-shot selector.
 	{
 		////Handles facial recognition. Updates staring frame based on calculation.
 
@@ -207,7 +226,7 @@ void Clip::Create(double max_length, double min_length)
 	//If clip length is longer than the maximum, a random segment within this length will be used.
 	if (current_clip_length > max_length)
 	{
-		cut_length = RandomLength(max_length-2, max_length);
+		cut_length = RandomLength(std::min(max_length, std::max(min_length, max_length-2)), max_length);
 		double cut = (current_clip_length - cut_length)/2; //cut -> cut_length -> cut.
 		double new_start = start_timestamp + cut;
 		double new_end = end_timestamp - cut;
@@ -216,7 +235,7 @@ void Clip::Create(double max_length, double min_length)
 		start_timestamp = new_start;
 		end_timestamp = new_end;
 	}
-	
+
 }
 
 //Set's the starting timestamp (in seconds).
@@ -236,7 +255,7 @@ void Clip::setEnd(float end)
 
 //Writes the selected segment of the video clip to the specified VideoWriter.
 //"output" is the VideoWriter to which the clip will be written.
-void Clip::WriteTo(VideoWriter output) 
+void Clip::WriteTo(VideoWriter output)
 {
 	Mat img; //Creates image because it needs each frame image in the video
 	int curr_frame = 0;
@@ -267,7 +286,7 @@ void Clip::WriteTo(VideoWriter output)
 
 //Displays the updated segment of the video clip, using OpenCV, in a resizable window.
 //This method plays the clip at a higher speed (frame skipping) to enable preview and testing.
-void Clip::Display() 
+void Clip::Display()
 {
 	Mat img;
 	int curr_frame = 0;

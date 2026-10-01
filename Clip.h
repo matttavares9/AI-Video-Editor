@@ -5,11 +5,15 @@
 #include <iostream>
 #include <math.h>
 #include <cmath>
+#include <opencv2/videoio.hpp>
+#include <string>
+#include <vector>
 #ifndef TEST_H
 #define TEST_H
 
 class Clip {
 public:
+    struct BlurSample { int frame; double variance; bool blurry; };
     // Constructor
     Clip(std::string clip_name, int& clip_num, std::string path, double max_length = 8, double min_length = 4);
 
@@ -29,10 +33,14 @@ public:
     int getHeight() const { return height; }
     double getFPS() const { return fps; }
     double getLength() const { return video_length; }
+    double getStart() const { return start_timestamp; }
+    double getEnd() const { return end_timestamp; }
+    const std::vector<BlurSample>& getBlurSamples() const { return blur_samples; }
+    void setFaceCascade(const std::string& path) { face_cascade_path = path; }
 
     int id;
-    Clip* next;
-    Clip* prev;
+    Clip* next = nullptr;
+    Clip* prev = nullptr;
 
 private:
     // Member Variables
@@ -44,6 +52,8 @@ private:
     int height;
     double fps;
     cv::VideoWriter slice;
+    std::vector<BlurSample> blur_samples;
+    std::string face_cascade_path;
 };
 
 #endif // HEADER_FILE_NAME_H

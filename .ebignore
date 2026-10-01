@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+.pytest_cache
+__pycache__
+build
+data
+*.db
+*.mp4
+.env

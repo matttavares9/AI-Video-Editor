@@ -1,0 +1,9 @@
+build/
+data/
+*.db
+__pycache__/
+.pytest_cache/
+.venv/
+.env
+.elasticbeanstalk/app_versions/
+.elasticbeanstalk/logs/

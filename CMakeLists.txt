@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.20)
+project(ai_video_editor_engine LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui objdetect)
+if(OpenCV_VERSION VERSION_GREATER_EQUAL "5.0")
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui objdetect xobjdetect)
+endif()
+find_package(nlohmann_json 3.2.0 REQUIRED)
+
+add_library(clip_core Clip.cpp)
+target_include_directories(clip_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(clip_core PUBLIC ${OpenCV_LIBS})
+add_executable(VideoTrimmer VideoCompiler.cpp)
+target_link_libraries(VideoTrimmer PRIVATE clip_core)
+add_executable(video_engine engine/src/main.cpp)
+target_link_libraries(video_engine PRIVATE clip_core nlohmann_json::nlohmann_json)
+target_compile_options(video_engine PRIVATE -Wall -Wextra -Wpedantic)
+
+install(TARGETS video_engine RUNTIME DESTINATION bin)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(clip_regression engine/tests/clip_regression.cpp)
+    target_link_libraries(clip_regression PRIVATE clip_core)
+    add_test(NAME original_blur_selection COMMAND clip_regression "${CMAKE_CURRENT_BINARY_DIR}/test-fixtures")
+endif()

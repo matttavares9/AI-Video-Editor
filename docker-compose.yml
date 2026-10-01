@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: video_editor
+      POSTGRES_USER: video_editor
+      POSTGRES_PASSWORD: development-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U video_editor -d video_editor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://video_editor:development-only@postgres:5432/video_editor
+      DATA_DIR: /data
+      VIDEO_ENGINE_BIN: /app/build/video_engine
+    ports: ["8000:8000"]
+    volumes:
+      - editor-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  django-admin:
+    build: .
+    command: >
+      sh -c "python django_admin/manage.py migrate --noinput &&
+      python django_admin/manage.py runserver 0.0.0.0:8001"
+    environment:
+      DATABASE_URL: postgresql://video_editor:development-only@postgres:5432/video_editor
+      DJANGO_SECRET_KEY: local-development-only
+    ports: ["8001:8001"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  flask-dashboard:
+    build: .
+    command: flask --app flask_dashboard.app run --host 0.0.0.0 --port 8002
+    environment:
+      API_BASE_URL: http://api:8000
+    ports: ["8002:8002"]
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  editor-data:
