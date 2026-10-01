@@ -98,7 +98,9 @@ def compile_jobs(request: CompileRequest, db: Session = Depends(get_db)):
         result = run_engine("render", {"sources": sources, "output_path": str(output)})
         db.commit()
         return CompilationResponse(
-            output_path=result["output_path"], rendered_job_ids=rendered_ids,
+            output_path=result["output_path"],
+            download_url=f"/exports/{output.name}",
+            rendered_job_ids=rendered_ids,
             skipped_job_ids=skipped_ids, frames_written=result["frames_written"],
         )
     except (EngineError, OSError, ValueError) as error:
@@ -146,6 +148,17 @@ def download_export(job_id: str, db: Session = Depends(get_db)):
     if not job.export_path or not Path(job.export_path).is_file():
         raise HTTPException(404, "Export not available")
     return FileResponse(job.export_path, media_type="video/mp4", filename=Path(job.export_path).name)
+
+
+@app.get("/exports/{output_name}")
+def download_compilation(output_name: str):
+    """Download a combined export created by POST /compilations."""
+    if Path(output_name).name != output_name:
+        raise HTTPException(400, "Invalid export name")
+    output = DATA_DIR / "exports" / output_name
+    if not output.is_file():
+        raise HTTPException(404, "Export not available")
+    return FileResponse(output, media_type="video/mp4", filename=output.name)
 
 
 def validate_edit_plan(analysis: dict, minimum: float, maximum: float) -> dict:

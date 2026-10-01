@@ -34,6 +34,7 @@ class CompileRequest(BaseModel):
 
 class CompilationResponse(BaseModel):
     output_path: str
+    download_url: str
     rendered_job_ids: list[str]
     skipped_job_ids: list[str]
     frames_written: int

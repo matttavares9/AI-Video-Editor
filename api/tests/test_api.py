@@ -8,6 +8,7 @@ os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="video-editor-tests-")
 
 from fastapi.testclient import TestClient
 from api.app.db import Base, engine
+from api.app.engine import DATA_DIR
 from api.app.main import app
 
 
@@ -67,4 +68,14 @@ def test_compilation_analyzes_and_joins_every_uploaded_clip():
         response = client.post("/compilations", json={"job_ids": [first, second]})
     assert response.status_code == 200
     assert response.json()["rendered_job_ids"] == [first, second]
+    assert response.json()["download_url"].startswith("/exports/")
     assert len(run_engine.call_args_list[2].args[1]["sources"]) == 2
+
+
+def test_combined_export_download_route_only_serves_exports():
+    output = DATA_DIR / "exports" / "combined.mp4"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"video-bytes")
+    response = client.get("/exports/combined.mp4")
+    assert response.status_code == 200
+    assert response.content == b"video-bytes"
